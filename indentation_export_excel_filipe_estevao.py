@@ -2,7 +2,7 @@
 # Script Name: Export Excel by Filipe Estevao
 # Description: Python script for data export to Excel.
 # 
-# Copyright (c) 2026 Filipe Estevao de Freitas
+# Copyright (c) 2026 Filipe Estevão
 # 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -37,7 +37,16 @@ import sys
 import numpy as np
 from openpyxl import Workbook
 from openpyxl.chart import BarChart, ScatterChart, Reference, Series
-from openpyxl.chart.data_source import AxDataSource, NumData, NumDataSource, NumRef, NumVal, StrData, StrRef, StrVal
+from openpyxl.chart.data_source import (
+    AxDataSource,
+    NumData,
+    NumDataSource,
+    NumRef,
+    NumVal,
+    StrData,
+    StrRef,
+    StrVal,
+)
 from openpyxl.chart.error_bar import ErrorBars
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils.cell import get_column_letter, quote_sheetname
@@ -56,23 +65,6 @@ SUMMARY_CHART_NAMES = ('HIT', 'EIT', 'E*')
 GROUP_COLORS = (
     '2B78C4', 'B0689C', '53A6A6', 'FF9DA7', 'FF9B00',
     '71C840', 'E15759', '9C755F', '8C8C8C', '28292E')
-
-
-def sheet_title(name, used):
-    invalid = '[]:*?/\\'
-    title = ''.join('_' if c in invalid else c for c in name)[:31] or 'Sheet'
-    base = title
-    index = 1
-    while title in used:
-        suffix = '_%d' % index
-        title = base[:31 - len(suffix)] + suffix
-        index += 1
-    used.add(title)
-    return title
-
-
-def xlref(column, row):
-    return get_column_letter(column) + str(row)
 
 
 def is_number(value):
@@ -102,12 +94,16 @@ def curve_dimension(curves, curve_type, names):
     if curve_type not in curves:
         return None
     names = [n.lower() for n in names]
-    for _, meta in sorted(curves[curve_type].items(), key=lambda item: int(item[0])):
+    curve_items = sorted(
+        curves[curve_type].items(),
+        key=lambda item: int(item[0]),
+    )
+    for _, meta in curve_items:
         display = meta.get('DisplayName', '').lower()
         short = meta.get('ShortName', '').lower()
         if display in names or short in names:
             return int(meta.get('DimIndex'))
-    for _, meta in sorted(curves[curve_type].items(), key=lambda item: int(item[0])):
+    for _, meta in curve_items:
         display = meta.get('DisplayName', '').lower()
         short = meta.get('ShortName', '').lower()
         if any(n in display or n in short for n in names):
@@ -123,7 +119,11 @@ def curve_unit(curves, curve_type, dim_index):
 
 def curve_name(curves, curve_type, dim_index):
     meta = curves[curve_type].get(str(dim_index), {})
-    return meta.get('ShortName') or meta.get('DisplayName') or 'Dim %d' % dim_index
+    return (
+        meta.get('ShortName')
+        or meta.get('DisplayName')
+        or 'Dim %d' % dim_index
+    )
 
 
 def selected_acquisitions(groups):
@@ -219,7 +219,15 @@ def varied_color(hex_color, variation):
     return ''.join('%02X' % value for value in values)
 
 
-def parameter_value(server, doc_id, data_id, param_id, unit_factor, cycle_index=None, cycle_key='cycle_index'):
+def parameter_value(
+    server,
+    doc_id,
+    data_id,
+    param_id,
+    unit_factor,
+    cycle_index=None,
+    cycle_key='cycle_index',
+):
     kwargs = {
         'doc_id': doc_id,
         'data_id': data_id,
@@ -237,46 +245,6 @@ def parameter_value(server, doc_id, data_id, param_id, unit_factor, cycle_index=
     return None
 
 
-def result_values(server, doc_id, acquisition_id, analysis_id, param_id, unit_factor, cycles_count):
-    def fetch(data_id, indexes, cycle_key):
-        values = []
-        for cycle_index in indexes:
-            try:
-                value = parameter_value(
-                    server, doc_id, data_id, param_id, unit_factor, cycle_index, cycle_key)
-            except Exception:
-                continue
-            if value is not None:
-                values.append(value)
-        return values
-
-    def score(values):
-        rounded = set(round(v, 12) for v in values if is_number(v))
-        return len(rounded), len(values)
-
-    values = []
-    cycles_count = max(cycles_count or 1, 1)
-    candidates = []
-
-    for data_id in (analysis_id, acquisition_id):
-        for cycle_key in ('cycle_index', 'cycle', 'cycle_id'):
-            candidates.append(fetch(data_id, range(1, cycles_count + 1), cycle_key))
-            candidates.append(fetch(data_id, range(cycles_count), cycle_key))
-
-    values = max(candidates, key=score) if candidates else []
-    if values:
-        return values
-
-    for data_id in (analysis_id, acquisition_id):
-        try:
-            value = parameter_value(server, doc_id, data_id, param_id, unit_factor)
-        except Exception:
-            continue
-        if value is not None:
-            return [value]
-    return []
-
-
 def safe_acquisition_analyses(server, doc_id, data_id):
     try:
         return server.acquisitions.analyses(
@@ -287,10 +255,23 @@ def safe_acquisition_analyses(server, doc_id, data_id):
         return []
 
 
-def acquisition_result_value(server, doc_id, acquisition_id, analysis_id, param_id, unit_factor):
+def acquisition_result_value(
+    server,
+    doc_id,
+    acquisition_id,
+    analysis_id,
+    param_id,
+    unit_factor,
+):
     for data_id in (analysis_id, acquisition_id):
         try:
-            value = parameter_value(server, doc_id, data_id, param_id, unit_factor)
+            value = parameter_value(
+                server,
+                doc_id,
+                data_id,
+                param_id,
+                unit_factor,
+            )
         except Exception:
             continue
         if value is not None:
@@ -322,7 +303,10 @@ def monotonic_average_segment(segment_x, segment_y, target_count):
 
     if not x_grid:
         return [], []
-    return np.maximum(np.mean(np.array(x_grid), axis=0), 0), np.maximum(y_grid, 0)
+    return (
+        np.maximum(np.mean(np.array(x_grid), axis=0), 0),
+        np.maximum(y_grid, 0),
+    )
 
 
 def progress_average_segment(segment_x, segment_y, target_count):
@@ -344,7 +328,9 @@ def average_segment(segment_x, segment_y, target_count):
     for y in segment_y:
         increasing = np.sum(np.diff(y) >= 0)
         decreasing = np.sum(np.diff(y) <= 0)
-        directions.append(max(increasing, decreasing) / float(max(len(y) - 1, 1)))
+        directions.append(
+            max(increasing, decreasing) / float(max(len(y) - 1, 1))
+        )
     if directions and min(directions) > 0.9:
         return monotonic_average_segment(segment_x, segment_y, target_count)
     return progress_average_segment(segment_x, segment_y, target_count)
@@ -355,7 +341,10 @@ def write_results_sheet(wb, server, doc_id, selected, analyses_classes):
     ws.freeze_panes = 'B1'
     header_fill = PatternFill('solid', fgColor='FCE4D6')
     section_fill = PatternFill('solid', fgColor='D9EAF7')
-    summary_chart_data = {name: {'unit': '', 'groups': []} for name in SUMMARY_CHART_NAMES}
+    summary_chart_data = {
+        name: {'unit': '', 'groups': []}
+        for name in SUMMARY_CHART_NAMES
+    }
     row = 1
 
     ws.cell(row, 1, 'Indentation results')
@@ -372,7 +361,11 @@ def write_results_sheet(wb, server, doc_id, selected, analyses_classes):
         columns_by_key = {}
         acquisition_names = []
         for data_id, acquisition, acquisition_index in acquisitions:
-            acquisition_name = measurement_name(group, acquisition, acquisition_index)
+            acquisition_name = measurement_name(
+                group,
+                acquisition,
+                acquisition_index,
+            )
             acquisition_names.append(acquisition_name)
             analyses = safe_acquisition_analyses(server, doc_id, data_id)
             for analysis in analyses:
@@ -389,10 +382,17 @@ def write_results_sheet(wb, server, doc_id, selected, analyses_classes):
                         parameter['id'],
                         unit_factor)
                     if value is not None:
-                        key = (analysis_class.get('class_name', ''), parameter.get('name', ''), parameter.get('unit', ''))
+                        key = (
+                            analysis_class.get('class_name', ''),
+                            parameter.get('name', ''),
+                            parameter.get('unit', ''),
+                        )
                         if key not in columns_by_key:
                             columns_by_key[key] = {
-                                'analysis': analysis_class.get('class_name', ''),
+                                'analysis': analysis_class.get(
+                                    'class_name',
+                                    '',
+                                ),
                                 'parameter': parameter.get('name', ''),
                                 'unit': parameter.get('unit', ''),
                                 'values': [],
@@ -400,7 +400,9 @@ def write_results_sheet(wb, server, doc_id, selected, analyses_classes):
                             }
                             columns.append(columns_by_key[key])
                         columns_by_key[key]['values'].append(value)
-                        columns_by_key[key]['acquisitions'][acquisition_name] = value
+                        columns_by_key[key]['acquisitions'][
+                            acquisition_name
+                        ] = value
 
         for column in columns:
             column['stats'] = stats(column['values'])
@@ -420,7 +422,11 @@ def write_results_sheet(wb, server, doc_id, selected, analyses_classes):
             })
 
         if not columns:
-            ws.cell(row, 1, 'No analysis results found for selected measurements')
+            ws.cell(
+                row,
+                1,
+                'No analysis results found for selected measurements',
+            )
             row += 2
             continue
 
@@ -463,10 +469,22 @@ def choose_curve(curves):
         y_dim = curve_dimension(curves, curve_type, Y_NAMES)
         if x_dim is not None and y_dim is not None:
             return curve_type, x_dim, y_dim
-    raise RuntimeError('Could not find Pd and Fn curve dimensions in the document')
+    raise RuntimeError(
+        'Could not find Pd and Fn curve dimensions in the document'
+    )
 
 
-def write_curves_sheet(wb, server, doc_id, selected, curves, curve_type, x_dim, y_dim, group_colors):
+def write_curves_sheet(
+    wb,
+    server,
+    doc_id,
+    selected,
+    curves,
+    curve_type,
+    x_dim,
+    y_dim,
+    group_colors,
+):
     ws = wb.create_sheet('Curves')
     ws.freeze_panes = 'A3'
     x_unit, x_factor = curve_unit(curves, curve_type, x_dim)
@@ -483,10 +501,18 @@ def write_curves_sheet(wb, server, doc_id, selected, curves, curve_type, x_dim, 
             if not rows:
                 continue
             breakpoints = get_breakpoints(server, doc_id, data_id, len(rows))
-            display_name = curve_measurement_name(group, acquisition, acquisition_index)
+            display_name = curve_measurement_name(
+                group,
+                acquisition,
+                acquisition_index,
+            )
             ws.cell(1, col, display_name)
             ws.cell(2, col, '%s [%s]' % (x_name, x_unit) if x_unit else x_name)
-            ws.cell(2, col + 1, '%s [%s]' % (y_name, y_unit) if y_unit else y_name)
+            ws.cell(
+                2,
+                col + 1,
+                '%s [%s]' % (y_name, y_unit) if y_unit else y_name,
+            )
             x_values = []
             y_values = []
             for row_index, point in enumerate(rows, 3):
@@ -517,8 +543,18 @@ def write_curves_sheet(wb, server, doc_id, selected, curves, curve_type, x_dim, 
         chart.width = 24
         chart.height = 14
         for item in exported:
-            x_values = Reference(ws, min_col=item['col'], min_row=3, max_row=item['count'] + 2)
-            y_values = Reference(ws, min_col=item['col'] + 1, min_row=3, max_row=item['count'] + 2)
+            x_values = Reference(
+                ws,
+                min_col=item['col'],
+                min_row=3,
+                max_row=item['count'] + 2,
+            )
+            y_values = Reference(
+                ws,
+                min_col=item['col'] + 1,
+                min_row=3,
+                max_row=item['count'] + 2,
+            )
             series = Series(y_values, x_values, title=item['name'])
             color = color_for_group(item['group'], group_colors)
             series.graphicalProperties.line.solidFill = color
@@ -531,7 +567,15 @@ def write_curves_sheet(wb, server, doc_id, selected, curves, curve_type, x_dim, 
     return exported, x_name, x_unit, y_name, y_unit, chart
 
 
-def write_average_curves_sheet(wb, exported, x_name, x_unit, y_name, y_unit, group_colors):
+def write_average_curves_sheet(
+    wb,
+    exported,
+    x_name,
+    x_unit,
+    y_name,
+    y_unit,
+    group_colors,
+):
     ws = wb.create_sheet('Average curves')
     groups = []
     for item in exported:
@@ -557,18 +601,37 @@ def write_average_curves_sheet(wb, exported, x_name, x_unit, y_name, y_unit, gro
         usable_items = [
             item
             for item in exported
-            if item['group'] == group_name and len(item['x']) >= 2 and len(item['y']) >= 2
+            if (
+                item['group'] == group_name
+                and len(item['x']) >= 2
+                and len(item['y']) >= 2
+            )
         ]
         if not usable_items:
             continue
 
         ws.cell(1, col, group_name)
-        ws.cell(2, col, 'Mean %s [%s]' % (x_name, x_unit) if x_unit else 'Mean %s' % x_name)
-        ws.cell(2, col + 1, 'Mean %s [%s]' % (y_name, y_unit) if y_unit else 'Mean %s' % y_name)
+        ws.cell(
+            2,
+            col,
+            'Mean %s [%s]' % (x_name, x_unit)
+            if x_unit
+            else 'Mean %s' % x_name,
+        )
+        ws.cell(
+            2,
+            col + 1,
+            'Mean %s [%s]' % (y_name, y_unit)
+            if y_unit
+            else 'Mean %s' % y_name,
+        )
 
         averaged_x = []
         averaged_y = []
-        segment_count = max(len(item['breakpoints']) - 1 for item in usable_items)
+        segment_count = max(
+            len(item['breakpoints']) - 1
+            for item in usable_items
+        )
         for segment_index in range(segment_count):
             segment_x = []
             segment_y = []
@@ -643,12 +706,19 @@ def range_ref(ws, column, first_row, last_row):
 
 
 def number_cache(values):
-    points = [NumVal(idx=index, v=value) for index, value in enumerate(values) if is_number(value)]
+    points = [
+        NumVal(idx=index, v=value)
+        for index, value in enumerate(values)
+        if is_number(value)
+    ]
     return NumData(ptCount=len(values), pt=points)
 
 
 def string_cache(values):
-    points = [StrVal(idx=index, v='' if value is None else str(value)) for index, value in enumerate(values)]
+    points = [
+        StrVal(idx=index, v='' if value is None else str(value))
+        for index, value in enumerate(values)
+    ]
     return StrData(ptCount=len(values), pt=points)
 
 
@@ -678,7 +748,14 @@ def set_chart_axis_ids(chart, base_id):
         chart.y_axis.crossBetween = 'between'
 
 
-def add_summary_bar_chart(ws, chart_name, chart_info, anchor, data_col, axis_base_id):
+def add_summary_bar_chart(
+    ws,
+    chart_name,
+    chart_info,
+    anchor,
+    data_col,
+    axis_base_id,
+):
     groups = chart_info['groups']
     unit = chart_info['unit']
 
@@ -707,8 +784,18 @@ def add_summary_bar_chart(ws, chart_name, chart_info, anchor, data_col, axis_bas
     set_chart_axis_ids(chart, axis_base_id)
     chart.type = 'col'
     chart.grouping = 'clustered'
-    chart.add_data(Reference(ws, min_col=data_col + 1, min_row=3, max_row=last_row), titles_from_data=True)
-    chart.set_categories(Reference(ws, min_col=data_col, min_row=first_row, max_row=last_row))
+    chart.add_data(
+        Reference(ws, min_col=data_col + 1, min_row=3, max_row=last_row),
+        titles_from_data=True,
+    )
+    chart.set_categories(
+        Reference(
+            ws,
+            min_col=data_col,
+            min_row=first_row,
+            max_row=last_row,
+        )
+    )
     chart.series[0].cat = AxDataSource(strRef=StrRef(
         f=range_ref(ws, data_col, first_row, last_row),
         strCache=string_cache([item['group'] for item in groups])))
@@ -720,12 +807,23 @@ def add_summary_bar_chart(ws, chart_name, chart_info, anchor, data_col, axis_bas
         errDir='y',
         errBarType='both',
         errValType='cust',
-        plus=NumDataSource(numRef=NumRef(f=std_ref, numCache=number_cache(std_values))),
-        minus=NumDataSource(numRef=NumRef(f=std_ref, numCache=number_cache(std_values))))
+        plus=NumDataSource(
+            numRef=NumRef(f=std_ref, numCache=number_cache(std_values))
+        ),
+        minus=NumDataSource(
+            numRef=NumRef(f=std_ref, numCache=number_cache(std_values))
+        ),
+    )
     ws.add_chart(chart, anchor)
 
 
-def write_charts_sheet(ws, doc_name, summary_chart_data, curve_chart, average_curve_chart):
+def write_charts_sheet(
+    ws,
+    doc_name,
+    summary_chart_data,
+    curve_chart,
+    average_curve_chart,
+):
     ws.cell(1, 1, doc_name)
     ws.cell(1, 1).font = Font(bold=True)
 
@@ -760,7 +858,9 @@ def export_selected_indentation_excel(server, doc_id):
     groups = server.groups(doc_id=doc_id)
     selected = selected_acquisitions(groups)
     if not selected:
-        raise RuntimeError('No selected/relevant indentation measurements found')
+        raise RuntimeError(
+            'No selected/relevant indentation measurements found'
+        )
 
     curves = server.curves(doc_id=doc_id)
     analyses_classes = {
@@ -769,17 +869,43 @@ def export_selected_indentation_excel(server, doc_id):
     }
     curve_type, x_dim, y_dim = choose_curve(curves)
 
-    info('Exporting selected indentation measurements from %s' % doc.get('name', doc_id))
+    info(
+        'Exporting selected indentation measurements from %s'
+        % doc.get('name', doc_id)
+    )
     info(' - curve type: %s' % curve_type)
 
     wb = Workbook(write_only=False)
     charts_ws = wb.active
     charts_ws.title = 'Charts'
     group_colors = {}
-    summary_chart_data = write_results_sheet(wb, server, doc_id, selected, analyses_classes)
+    summary_chart_data = write_results_sheet(
+        wb,
+        server,
+        doc_id,
+        selected,
+        analyses_classes,
+    )
     exported, x_name, x_unit, y_name, y_unit, curve_chart = write_curves_sheet(
-        wb, server, doc_id, selected, curves, curve_type, x_dim, y_dim, group_colors)
-    average_curve_chart = write_average_curves_sheet(wb, exported, x_name, x_unit, y_name, y_unit, group_colors)
+        wb,
+        server,
+        doc_id,
+        selected,
+        curves,
+        curve_type,
+        x_dim,
+        y_dim,
+        group_colors,
+    )
+    average_curve_chart = write_average_curves_sheet(
+        wb,
+        exported,
+        x_name,
+        x_unit,
+        y_name,
+        y_unit,
+        group_colors,
+    )
     write_charts_sheet(
         charts_ws,
         os.path.basename(doc_path),
