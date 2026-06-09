@@ -457,7 +457,25 @@ def write_results_sheet(wb, server, doc_id, selected, analyses_classes):
 
         row += 2
 
-    for col in range(1, min(ws.max_column, 24) + 1):
+    # Auto-size first column A to its content. openpyxl can't perfectly
+    # match Excel AutoFit, so compute measured width and apply padding.
+    # Build list of longest line lengths for each non-empty cell.
+    lengths = []
+    for cell in ws['A']:
+        if cell.value is None:
+            continue
+        text = str(cell.value)
+        # splitlines() returns empty list for empty string; fall back to
+        # original text to ensure there's at least one item.
+        lines = text.splitlines() or [text]
+        lengths.append(max(len(line) for line in lines))
+    max_len = max(lengths) if lengths else 16
+    width = math.ceil(max_len * 1.05) + 2
+    width = min(max(width, 8), 255)
+    col_dim = ws.column_dimensions[get_column_letter(1)]
+    col_dim.width = width
+
+    for col in range(2, min(ws.max_column, 24) + 1):
         ws.column_dimensions[get_column_letter(col)].width = 16
 
     return summary_chart_data
