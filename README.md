@@ -28,6 +28,10 @@ Parameters=""C:\ProgramData\Anton Paar\Common files\scripts\py3\indentation_expo
 6. Go to **Tools** > **Reload tool configuration**.
 7. Under **Tools** > **Launch**, a new tool will be available: **Export Excel by Filipe Estevao**.
 
+## Indentation Software
+
+> [!WARNING]
+> Due to API limitations, only measurements marked as **RELEVANT** will be exported.
 
 ## Compatibility
 
