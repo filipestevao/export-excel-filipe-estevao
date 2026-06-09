@@ -24,7 +24,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.0.0"
+__version__ = "1.0.2"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -48,6 +48,8 @@ from openpyxl.chart.data_source import (
     StrVal,
 )
 from openpyxl.chart.error_bar import ErrorBars
+from openpyxl.chart.shapes import GraphicalProperties
+from openpyxl.drawing.line import LineProperties
 from openpyxl.styles import Font, PatternFill
 from openpyxl.utils.cell import get_column_letter, quote_sheetname
 
@@ -766,6 +768,20 @@ def set_chart_axis_ids(chart, base_id):
         chart.y_axis.crossBetween = 'between'
 
 
+def style_summary_bar_chart(chart):
+    chart.y_axis.scaling.min = 0
+
+    # Set overall chart border
+    if chart.plot_area.spPr is None:
+        chart.plot_area.spPr = GraphicalProperties()
+    if chart.plot_area.spPr.ln is None:
+        chart.plot_area.spPr.ln = LineProperties()
+    chart.plot_area.spPr.ln.solidFill = '000000'
+
+    chart.y_axis.majorGridlines.spPr = GraphicalProperties()
+    chart.y_axis.majorGridlines.spPr.line.solidFill = 'C5C5C5'
+
+
 def add_summary_bar_chart(
     ws,
     chart_name,
@@ -800,6 +816,7 @@ def add_summary_bar_chart(
     chart.width = 12
     chart.height = 8
     set_chart_axis_ids(chart, axis_base_id)
+    style_summary_bar_chart(chart)
     chart.type = 'col'
     chart.grouping = 'clustered'
     chart.add_data(
