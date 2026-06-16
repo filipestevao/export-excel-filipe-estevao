@@ -24,7 +24,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -281,34 +281,6 @@ def acquisition_result_value(
     return None
 
 
-def monotonic_average_segment(segment_x, segment_y, target_count):
-    y_starts = [y[0] for y in segment_y]
-    y_stops = [y[-1] for y in segment_y]
-    y_start = max(sum(y_starts) / len(y_starts), 0)
-    y_stop = max(sum(y_stops) / len(y_stops), 0)
-    y_grid = np.linspace(y_start, y_stop, target_count)
-    x_grid = []
-
-    for x, y in zip(segment_x, segment_y):
-        if y[-1] < y[0]:
-            y_for_interp = y[::-1]
-            x_for_interp = x[::-1]
-        else:
-            y_for_interp = y
-            x_for_interp = x
-
-        unique_y, unique_index = np.unique(y_for_interp, return_index=True)
-        unique_x = x_for_interp[unique_index]
-        if len(unique_y) < 2:
-            continue
-        x_grid.append(np.interp(y_grid, unique_y, unique_x))
-
-    if not x_grid:
-        return [], []
-    return (
-        np.maximum(np.mean(np.array(x_grid), axis=0), 0),
-        np.maximum(y_grid, 0),
-    )
 
 
 def progress_average_segment(segment_x, segment_y, target_count):
@@ -326,15 +298,6 @@ def progress_average_segment(segment_x, segment_y, target_count):
 
 
 def average_segment(segment_x, segment_y, target_count):
-    directions = []
-    for y in segment_y:
-        increasing = np.sum(np.diff(y) >= 0)
-        decreasing = np.sum(np.diff(y) <= 0)
-        directions.append(
-            max(increasing, decreasing) / float(max(len(y) - 1, 1))
-        )
-    if directions and min(directions) > 0.9:
-        return monotonic_average_segment(segment_x, segment_y, target_count)
     return progress_average_segment(segment_x, segment_y, target_count)
 
 
