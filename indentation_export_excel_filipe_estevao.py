@@ -560,6 +560,8 @@ def write_curves_sheet(
         chart.title = 'Indentation curves'
         chart.x_axis.title = '%s [%s]' % (x_name, x_unit) if x_unit else x_name
         chart.y_axis.title = '%s [%s]' % (y_name, y_unit) if y_unit else y_name
+        chart.x_axis.scaling.min = 0
+        chart.y_axis.scaling.min = 0
         chart.width = 24
         chart.height = 14
         for item in exported:
