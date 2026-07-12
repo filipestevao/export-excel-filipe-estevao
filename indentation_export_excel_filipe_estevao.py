@@ -24,15 +24,17 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
 
+import json
 import math
 import os
 import subprocess
 import sys
+import urllib.request
 
 import numpy as np
 from openpyxl import Workbook
@@ -944,10 +946,61 @@ def ask_to_open_file(filename):
         open_file_with_default_program(filename)
 
 
+def check_for_updates():
+    info('Current version: %s' % __version__)
+    try:
+        repo_path = __url__.rstrip('/').replace(
+            'https://github.com/', '')
+        api_url = (
+            'https://api.github.com/repos/%s/tags' % repo_path)
+        req = urllib.request.Request(
+            api_url,
+            headers={'User-Agent': 'opencode/1.0'},
+            method='GET')
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            tags = json.loads(resp.read().decode())
+    except Exception:
+        info(
+            'Could not check for updates: no internet connection'
+        )
+        return
+
+    latest = ''
+    for tag in tags:
+        ver = tag['name'].lstrip('v')
+        if _version_greater(ver, latest):
+            latest = ver
+
+    if not latest:
+        info('Could not determine latest version')
+        return
+
+    if _version_greater(latest, __version__):
+        info(
+            'New version %s available. Visit %s to download'
+            % (latest, __url__)
+        )
+    else:
+        info('Latest version (%s) is installed' % __version__)
+
+
+def _version_greater(a, b):
+    parts_a = [int(x) for x in a.split('.')]
+    parts_b = [int(x) for x in b.split('.')]
+    max_len = max(len(parts_a), len(parts_b))
+    parts_a += [0] * (max_len - len(parts_a))
+    parts_b += [0] * (max_len - len(parts_b))
+    for pa, pb in zip(parts_a, parts_b):
+        if pa != pb:
+            return pa > pb
+    return False
+
+
 if __name__ == '__main__':
     indent = connect_to_indentation()
     result = indent.ls()
     info('Connected to %(server_name)s, V%(server_version)s' % result)
+    check_for_updates()
 
     docs = indent.docs()
     doc_id = docs.get('current') or docs['indexes'][0]
