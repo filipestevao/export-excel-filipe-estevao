@@ -947,7 +947,7 @@ def ask_to_open_file(filename):
 
 
 def check_for_updates():
-    info('Current version: %s' % __version__)
+    info('%s - Current version: %s' % (__title__, __version__))
     try:
         repo_path = __url__.rstrip('/').replace(
             'https://github.com/', '')
@@ -961,7 +961,7 @@ def check_for_updates():
             tags = json.loads(resp.read().decode())
     except Exception:
         info(
-            'Could not check for updates: no internet connection'
+            'Could not check for updates: no internet connection\n'
         )
         return
 
@@ -972,21 +972,38 @@ def check_for_updates():
             latest = ver
 
     if not latest:
-        info('Could not determine latest version')
+        info('Could not determine latest version\n')
+        return
+
+    try:
+        [int(x) for x in __version__.split('.')]
+        current_valid = True
+    except (ValueError, AttributeError):
+        current_valid = False
+
+    if not current_valid or _version_greater(__version__, latest):
+        info('Could not determine latest version\n')
         return
 
     if _version_greater(latest, __version__):
         info(
-            'New version %s available. Visit %s to download'
+            'New version %s available. Visit %s to download\n'
             % (latest, __url__)
         )
     else:
-        info('Latest version (%s) is installed' % __version__)
+        info('Latest version (%s) is installed\n' % __version__)
 
 
 def _version_greater(a, b):
-    parts_a = [int(x) for x in a.split('.')]
-    parts_b = [int(x) for x in b.split('.')]
+    if not a:
+        return False
+    if not b:
+        return True
+    try:
+        parts_a = [int(x) for x in a.split('.')]
+        parts_b = [int(x) for x in b.split('.')]
+    except (ValueError, AttributeError):
+        return False
     max_len = max(len(parts_a), len(parts_b))
     parts_a += [0] * (max_len - len(parts_a))
     parts_b += [0] * (max_len - len(parts_b))
@@ -997,10 +1014,10 @@ def _version_greater(a, b):
 
 
 if __name__ == '__main__':
+    check_for_updates()
     indent = connect_to_indentation()
     result = indent.ls()
     info('Connected to %(server_name)s, V%(server_version)s' % result)
-    check_for_updates()
 
     docs = indent.docs()
     doc_id = docs.get('current') or docs['indexes'][0]
