@@ -852,6 +852,105 @@ def write_charts_sheet(
         ws.add_chart(average_curve_chart, 'A48')
 
 
+def write_measurement_parameters_sheet(
+    wb, server, doc_id, selected,
+):
+    ws = wb.create_sheet('Parameters')
+    header_fill = PatternFill('solid', fgColor='D9EAF7')
+    section_fill = PatternFill('solid', fgColor='FCE4D6')
+
+    measurements = []
+    for _, group, acquisitions in selected:
+        for data_id, acquisition, acquisition_index in acquisitions:
+            name = measurement_name(
+                group, acquisition, acquisition_index,
+            )
+            try:
+                cond = server.acquisitions.conditions(
+                    doc_id=doc_id, acquisition_id=data_id,
+                )
+            except Exception:
+                continue
+            measurements.append({'name': name, 'conditions': cond})
+
+    if not measurements:
+        ws.cell(1, 1, 'No measurement parameters found')
+        return
+
+    for m in measurements:
+        cond = m['conditions']
+        param_lines = cond.get('summary', [])
+        indenter = cond.get('indenter', {})
+        m['param_lines'] = param_lines
+
+        key_items = list(param_lines)
+        for field in ('serial_number', 'material', 'geometry'):
+            if field in indenter:
+                key_items.append(str(indenter[field]))
+        m['key'] = tuple(key_items)
+
+    groups = {}
+    for m in measurements:
+        key = m['key']
+        if key not in groups:
+            groups[key] = {
+                'measurements': [],
+                'param_lines': m['param_lines'],
+                'indenter': m['conditions'].get('indenter', {}),
+            }
+        groups[key]['measurements'].append(m)
+
+    row = 1
+    for group_data in groups.values():
+        # Header row for measurement list
+        ws.cell(row, 1, 'Measurement Name').font = Font(bold=True)
+        ws.cell(row, 1).fill = header_fill
+        row += 1
+
+        for m in group_data['measurements']:
+            ws.cell(row, 1, m['name'])
+            row += 1
+
+        row += 1
+
+        # Parameters section
+        ws.cell(row, 1, '# Indentation Parameters')
+        ws.cell(row, 1).font = Font(bold=True)
+        ws.cell(row, 1).fill = section_fill
+        row += 1
+        for line in group_data['param_lines']:
+            if line:
+                ws.cell(row, 1, line)
+                row += 1
+
+        row += 1
+
+        # Indenters section
+        indenter = group_data['indenter']
+        if indenter:
+            ws.cell(row, 1, '# Indenters').font = Font(bold=True)
+            ws.cell(row, 1).fill = section_fill
+            row += 1
+            type_val = indenter.get('geometry', '')
+            if type_val:
+                ws.cell(row, 1, 'Type : %s' % type_val)
+                row += 1
+            serial = indenter.get('serial_number', '')
+            if serial:
+                ws.cell(row, 1, 'Serial number : %s' % serial)
+                row += 1
+            material = indenter.get('material', '')
+            if material:
+                ws.cell(row, 1, 'Material : %s' % material)
+                row += 1
+
+        row += 2
+
+    ws.column_dimensions['A'].width = 50
+    ws.column_dimensions['B'].width = 8
+    ws.column_dimensions['C'].width = 50
+
+
 def export_selected_indentation_excel(server, doc_id):
     docs = server.docs()
     doc = docs['docs'][doc_id]
@@ -888,6 +987,10 @@ def export_selected_indentation_excel(server, doc_id):
         selected,
         analyses_classes,
     )
+
+    write_measurement_parameters_sheet(
+        wb, server, doc_id, selected)
+
     exported, x_name, x_unit, y_name, y_unit, curve_chart = write_curves_sheet(
         wb,
         server,
