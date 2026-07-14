@@ -52,7 +52,7 @@ from openpyxl.chart.data_source import (
 from openpyxl.chart.error_bar import ErrorBars
 from openpyxl.chart.shapes import GraphicalProperties
 from openpyxl.drawing.line import LineProperties
-from openpyxl.styles import Font, PatternFill
+from openpyxl.styles import Font, PatternFill, numbers
 from openpyxl.utils.cell import get_column_letter, quote_sheetname
 
 from antonpaar import connect_to_indentation
@@ -948,13 +948,20 @@ def write_measurement_parameters_sheet(
             if col > 1:
                 ws.column_dimensions[
                     get_column_letter(col)
-                ].width = 15
+                ].width = 10
                 col += 1
             write_group(ws, group_data, col)
             ws.column_dimensions[
                 get_column_letter(col)
             ].width = 55
             col += 1
+
+
+def format_numbers(ws):
+    for row in ws.iter_rows():
+        for cell in row:
+            if isinstance(cell.value, (int, float)):
+                cell.number_format = '#,##0.00'
 
 
 def export_selected_indentation_excel(server, doc_id):
@@ -1023,6 +1030,9 @@ def export_selected_indentation_excel(server, doc_id):
         summary_chart_data,
         curve_chart,
         average_curve_chart)
+
+    for ws in wb.worksheets:
+        format_numbers(ws)
 
     wb.save(export_path)
     info('File saved: %s' % export_path)
