@@ -24,7 +24,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.0.4"
+__version__ = "1.1.0"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -900,55 +900,61 @@ def write_measurement_parameters_sheet(
             }
         groups[key]['measurements'].append(m)
 
-    row = 1
-    for group_data in groups.values():
-        # Header row for measurement list
-        ws.cell(row, 1, 'Measurement Name').font = Font(bold=True)
-        ws.cell(row, 1).fill = header_fill
+    def write_group(ws, group_data, col):
+        row = 1
+        ws.cell(row, col, 'Measurement Name').font = Font(bold=True)
+        ws.cell(row, col).fill = header_fill
         row += 1
-
         for m in group_data['measurements']:
-            ws.cell(row, 1, m['name'])
+            ws.cell(row, col, m['name'])
             row += 1
-
         row += 1
-
-        # Parameters section
-        ws.cell(row, 1, '# Indentation Parameters')
-        ws.cell(row, 1).font = Font(bold=True)
-        ws.cell(row, 1).fill = section_fill
+        ws.cell(row, col, '# Indentation Parameters').font = (
+            Font(bold=True)
+        )
+        ws.cell(row, col).fill = section_fill
         row += 1
         for line in group_data['param_lines']:
             if line:
-                ws.cell(row, 1, line)
+                ws.cell(row, col, line)
                 row += 1
-
         row += 1
-
-        # Indenters section
         indenter = group_data['indenter']
         if indenter:
-            ws.cell(row, 1, '# Indenters').font = Font(bold=True)
-            ws.cell(row, 1).fill = section_fill
+            ws.cell(row, col, '# Indenters').font = Font(bold=True)
+            ws.cell(row, col).fill = section_fill
             row += 1
             type_val = indenter.get('geometry', '')
             if type_val:
-                ws.cell(row, 1, 'Type : %s' % type_val)
+                ws.cell(row, col, 'Type : %s' % type_val)
                 row += 1
             serial = indenter.get('serial_number', '')
             if serial:
-                ws.cell(row, 1, 'Serial number : %s' % serial)
+                ws.cell(row, col, 'Serial number : %s' % serial)
                 row += 1
             material = indenter.get('material', '')
             if material:
-                ws.cell(row, 1, 'Material : %s' % material)
+                ws.cell(row, col, 'Material : %s' % material)
                 row += 1
-
         row += 2
 
-    ws.column_dimensions['A'].width = 50
-    ws.column_dimensions['B'].width = 8
-    ws.column_dimensions['C'].width = 50
+    if len(groups) == 1:
+        group_data = next(iter(groups.values()))
+        write_group(ws, group_data, 1)
+        ws.column_dimensions['A'].width = 55
+    else:
+        col = 1
+        for group_data in groups.values():
+            if col > 1:
+                ws.column_dimensions[
+                    get_column_letter(col)
+                ].width = 15
+                col += 1
+            write_group(ws, group_data, col)
+            ws.column_dimensions[
+                get_column_letter(col)
+            ].width = 55
+            col += 1
 
 
 def export_selected_indentation_excel(server, doc_id):
