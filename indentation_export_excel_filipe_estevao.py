@@ -294,8 +294,8 @@ def progress_average_segment(segment_x, segment_y, target_count):
         x_grid.append(np.interp(progress, source_progress, x))
         y_grid.append(np.interp(progress, source_progress, y))
     return (
-        np.maximum(np.mean(np.array(x_grid), axis=0), 0),
-        np.maximum(np.mean(np.array(y_grid), axis=0), 0),
+        np.mean(np.array(x_grid), axis=0),
+        np.mean(np.array(y_grid), axis=0),
     )
 
 
@@ -564,6 +564,7 @@ def write_average_curves_sheet(
     group_colors,
 ):
     ws = wb.create_sheet('Average curves')
+    ws.freeze_panes = 'A3'
     groups = []
     for item in exported:
         if len(item['x']) < 2 or len(item['y']) < 2:
@@ -580,6 +581,8 @@ def write_average_curves_sheet(
     chart.title = 'Average indentation curves'
     chart.x_axis.title = '%s [%s]' % (x_name, x_unit) if x_unit else x_name
     chart.y_axis.title = '%s [%s]' % (y_name, y_unit) if y_unit else y_name
+    chart.x_axis.scaling.min = 0
+    chart.y_axis.scaling.min = 0
     chart.width = 24
     chart.height = 14
     col = 1
@@ -628,8 +631,8 @@ def write_average_curves_sheet(
                     continue
                 start = item['breakpoints'][segment_index]
                 stop = item['breakpoints'][segment_index + 1]
-                x = np.maximum(item['x'][start:stop + 1], 0)
-                y = np.maximum(item['y'][start:stop + 1], 0)
+                x = item['x'][start:stop + 1]
+                y = item['y'][start:stop + 1]
                 if segment_index == 0:
                     positive = np.where((x > 0) | (y > 0))[0]
                     if len(positive):
