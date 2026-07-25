@@ -1,6 +1,7 @@
 # ==============================================================================
 # Script Name: Export Excel by Filipe Estevao
-# Description: Python script for data export to Excel.
+# Description: Python scripts for use with Anton Paar's software for data export
+# to Excel
 # 
 # Copyright (c) 2026 Filipe Estevão
 # 
@@ -24,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -855,15 +856,31 @@ def write_charts_sheet(
         ws.add_chart(average_curve_chart, 'A48')
 
 
+def _is_method_unavailable(exc):
+    # JSON-RPC -32601 = method absent from server API, not a retriable error.
+    if exc.args and exc.args[0] == -32601:
+        return True
+    return 'Method not found' in str(exc)
+
+
 def write_measurement_parameters_sheet(
-    wb, server, doc_id, selected,
+    wb, server, doc_id, selected, server_version=None,
 ):
     ws = wb.create_sheet('Parameters')
     header_fill = PatternFill('solid', fgColor='D9EAF7')
     section_fill = PatternFill('solid', fgColor='FCE4D6')
 
+    # Method absent before V11; calling it corrupts the TCP session.
+    # Check version up front instead of retrying per measurement.
+    conditions_supported = (
+        server_version is None
+        or not _version_greater('11.0.0', server_version)
+    )
+
     measurements = []
     for _, group, acquisitions in selected:
+        if not conditions_supported:
+            break
         for data_id, acquisition, acquisition_index in acquisitions:
             name = measurement_name(
                 group, acquisition, acquisition_index,
@@ -872,12 +889,16 @@ def write_measurement_parameters_sheet(
                 cond = server.acquisitions.conditions(
                     doc_id=doc_id, acquisition_id=data_id,
                 )
-            except Exception:
+            except Exception as exc:
+                if _is_method_unavailable(exc):
+                    # Stop retrying if method unexpectedly unavailable.
+                    conditions_supported = False
+                    break
                 continue
             measurements.append({'name': name, 'conditions': cond})
 
     if not measurements:
-        ws.cell(1, 1, 'No measurement parameters found')
+        wb.remove(ws)
         return
 
     for m in measurements:
@@ -967,7 +988,7 @@ def format_numbers(ws):
                 cell.number_format = '#,##0.00'
 
 
-def export_selected_indentation_excel(server, doc_id):
+def export_selected_indentation_excel(server, doc_id, server_version=None):
     docs = server.docs()
     doc = docs['docs'][doc_id]
     doc_path = doc.get('path') or doc.get('name') or 'indentation_export'
@@ -1005,7 +1026,7 @@ def export_selected_indentation_excel(server, doc_id):
     )
 
     write_measurement_parameters_sheet(
-        wb, server, doc_id, selected)
+        wb, server, doc_id, selected, server_version)
 
     exported, x_name, x_unit, y_name, y_unit, curve_chart = write_curves_sheet(
         wb,
@@ -1143,5 +1164,6 @@ if __name__ == '__main__':
 
     docs = indent.docs()
     doc_id = docs.get('current') or docs['indexes'][0]
-    filename = export_selected_indentation_excel(indent, doc_id)
+    filename = export_selected_indentation_excel(
+        indent, doc_id, result.get('server_version'))
     ask_to_open_file(filename)
