@@ -25,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.1.1"
+__version__ = "1.1.2"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -70,6 +70,7 @@ SUMMARY_CHART_NAMES = ('HIT', 'EIT', 'E*')
 GROUP_COLORS = (
     '2B78C4', 'B0689C', '53A6A6', 'FF9DA7', 'FF9B00',
     '71C840', 'E15759', '9C755F', '8C8C8C', '28292E')
+CURVE_LINE_WIDTH = 19050  # 1.5 pt in EMU (1 pt = 12700 EMU)
 
 
 def is_number(value):
@@ -530,6 +531,7 @@ def write_curves_sheet(
         chart.y_axis.scaling.min = 0
         chart.width = 24
         chart.height = 14
+        style_curve_chart(chart)
         for item in exported:
             x_values = Reference(
                 ws,
@@ -546,6 +548,7 @@ def write_curves_sheet(
             series = Series(y_values, x_values, title=item['name'])
             color = color_for_group(item['group'], group_colors)
             series.graphicalProperties.line.solidFill = color
+            series.graphicalProperties.line.width = CURVE_LINE_WIDTH
             series.marker.graphicalProperties.solidFill = color
             series.marker.graphicalProperties.line.solidFill = color
             cache_num_ref(series.xVal, item['x'].tolist())
@@ -586,6 +589,7 @@ def write_average_curves_sheet(
     chart.y_axis.scaling.min = 0
     chart.width = 24
     chart.height = 14
+    style_curve_chart(chart)
     col = 1
 
     for group_name in groups:
@@ -670,6 +674,7 @@ def write_average_curves_sheet(
         series = Series(y_values, x_values, title=group_name)
         color = color_for_group(group_name, group_colors)
         series.graphicalProperties.line.solidFill = color
+        series.graphicalProperties.line.width = CURVE_LINE_WIDTH
         series.marker.graphicalProperties.solidFill = color
         series.marker.graphicalProperties.line.solidFill = color
         cache_num_ref(series.xVal, averaged_x)
@@ -751,6 +756,20 @@ def style_summary_bar_chart(chart):
 
     chart.y_axis.majorGridlines.spPr = GraphicalProperties()
     chart.y_axis.majorGridlines.spPr.line.solidFill = 'C5C5C5'
+
+
+def style_curve_chart(chart):
+    # Set overall chart border
+    if chart.plot_area.spPr is None:
+        chart.plot_area.spPr = GraphicalProperties()
+    if chart.plot_area.spPr.ln is None:
+        chart.plot_area.spPr.ln = LineProperties()
+    chart.plot_area.spPr.ln.solidFill = '000000'
+
+    # Set internal gridlines (horizontal and vertical) to gray
+    for axis in (chart.x_axis, chart.y_axis):
+        axis.majorGridlines.spPr = GraphicalProperties()
+        axis.majorGridlines.spPr.line.solidFill = 'C5C5C5'
 
 
 def add_summary_bar_chart(
