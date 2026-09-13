@@ -3,7 +3,7 @@
 A collection of scripts designed for use with [Anton Paar](https://www.anton-paar.com/)'s Indentation, Scratch, and Tribometer software. These custom scripts leverage each application's API to export measurement data into Excel spreadsheets (.xlsx format).
 
 > [!IMPORTANT]
-> Currently, only the script for the Indentation software has been implemented.
+> Currently, scripts for the Indentation and Tribometer software have been implemented. The Scratch script is not yet available.
 
 
 ## Installation
@@ -12,26 +12,36 @@ A collection of scripts designed for use with [Anton Paar](https://www.anton-paa
 
 2. Copy the script to the following folder: `C:\ProgramData\Anton Paar\Common files\scripts\py3\`
 
-3. Open the Indentation software and navigate to **Tools** > **Configure tool...**
+3. Open the Indentation or Tribometer software and navigate to **Tools** > **Configure tool...**
 
-4. This will automatically open the `tools.ini` file. Append the following block to the last line:
+4. This will automatically open the `tools.ini` file. Append the corresponding block below to the last line, depending on the software:
 
-```ini
-[Export Excel by Filipe Estevao]
-Title=Export Excel by Filipe Estevao
-Executable=python.exe
-Path=C:\ProgramData\Anton Paar\Common files\scripts\python37\python-3.7.2.amd64
-Parameters=""C:\ProgramData\Anton Paar\Common files\scripts\py3\indentation_export_excel_filipe_estevao.py""
-```
+   **Indentation**
+   ```ini
+   [Export Excel by Filipe Estevao]
+   Title=Export Excel by Filipe Estevao
+   Executable=python.exe
+   Path=C:\ProgramData\Anton Paar\Common files\scripts\python37\python-3.7.2.amd64
+   Parameters=""C:\ProgramData\Anton Paar\Common files\scripts\py3\indentation_export_excel_filipe_estevao.py""
+   ```
+
+   **Tribometer**
+   ```ini
+   [Export Excel by Filipe Estevao]
+   Title=Export Excel by Filipe Estevao
+   Executable=python.exe
+   Path=C:\ProgramData\Anton Paar\Common files\scripts\python37\python-3.7.2.amd64
+   Parameters=""C:\ProgramData\Anton Paar\Common files\scripts\py3\tribo_export_excel_filipe_estevao.py""
+   ```
 
 5. Save and close the `tools.ini` file.
 6. Go to **Tools** > **Reload tool configuration**.
 7. Under **Tools** > **Launch**, a new tool will be available: **Export Excel by Filipe Estevao**.
 
-## Indentation Software
+## Indentation and Tribometer Software
 
-> [!WARNING]
-> Due to API limitations, only measurements marked as **RELEVANT** will be exported.
+> [!NOTE]
+> As part of the export process, only measurements marked as **RELEVANT** are included. Make sure to mark your measurements as Relevant before exporting.
 
 ## Compatibility
 

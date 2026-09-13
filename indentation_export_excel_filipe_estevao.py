@@ -1,5 +1,5 @@
 # ==============================================================================
-# Script Name: Export Excel by Filipe Estevao
+# Script Name: Export Excel by Filipe Estevao - Indentation
 # Description: Python scripts for use with Anton Paar's software for data export
 # to Excel
 # 
@@ -25,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.1.2"
+__version__ = "1.2.0"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"

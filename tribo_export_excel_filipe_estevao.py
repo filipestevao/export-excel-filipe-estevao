@@ -1,7 +1,7 @@
 # ==============================================================================
-# Script Name: Export Excel Tribo by Filipe Estevao
-# Description: Python scripts for use with Anton Paar's software for tribometer
-# data export to Excel
+# Script Name: Export Excel by Filipe Estevao - Tribometer
+# Description: Python scripts for use with Anton Paar's software for data export
+# to Excel
 # 
 # Copyright (c) 2026 Filipe Estevão
 # 
@@ -24,8 +24,8 @@
 # SOFTWARE.
 # ==============================================================================
 
-__title__ = "Export Excel Tribo by Filipe Estevao"
-__version__ = "1.1.2"
+__title__ = "Export Excel by Filipe Estevao"
+__version__ = "1.2.0"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
