@@ -177,6 +177,167 @@ def curve_display_name(curves, curve_type, dim_index, fallback):
     )
 
 
+FW_WINDOW = 0.6
+FW_CENTER_MU = True
+FW_MIN_POINTS = 8
+SIGN_MINORITY = 0.005
+MEASURE_ROTATION = 0
+MEASURE_ANGULAR = 1
+MEASURE_LINEAR = 2
+RECIPROCATING_MEASURES = (MEASURE_ANGULAR, MEASURE_LINEAR)
+
+
+def detect_mode(y_values, measure_type):
+    nums = [v for v in y_values if is_number(v)]
+    if not nums:
+        return 'rotation'
+    pos = sum(1 for v in nums if v > 0)
+    neg = sum(1 for v in nums if v < 0)
+    if neg > 0 and pos / len(nums) <= SIGN_MINORITY:
+        return 'reverse'
+    minority = min(pos, neg) / len(nums)
+    if measure_type in RECIPROCATING_MEASURES:
+        return 'reciprocating'
+    if minority > SIGN_MINORITY:
+        return 'reciprocating'
+    return 'rotation'
+
+
+def circular_mean(values):
+    sx = sum(math.cos(2 * math.pi * v) for v in values)
+    sy = sum(math.sin(2 * math.pi * v) for v in values)
+    return (math.atan2(sy, sx) / (2 * math.pi)) % 1.0
+
+
+def alignment_centers(phases, mus):
+    crosses = []
+    for i in range(1, len(phases)):
+        p0, m0 = phases[i - 1], mus[i - 1]
+        p1, m1 = phases[i], mus[i]
+        if m0 == 0:
+            crosses.append(p0 % 1.0)
+        elif (m0 < 0) != (m1 < 0):
+            denom = abs(m0) + abs(m1)
+            frac = abs(m0) / denom if denom else 0.5
+            crosses.append((p0 + frac * (p1 - p0)) % 1.0)
+    if len(crosses) < 2:
+        return [0.25, 0.75]
+    clusters = [[crosses[0]]]
+    for cross in sorted(crosses)[1:]:
+        if cross - clusters[-1][-1] < 0.1:
+            clusters[-1].append(cross)
+        else:
+            clusters.append([cross])
+    if len(clusters) > 1:
+        first = clusters[0][0]
+        last = clusters[-1][-1]
+        if first + 1.0 - last < 0.1:
+            clusters[0] = clusters[-1] + clusters[0]
+            clusters.pop()
+    if len(clusters) != 2:
+        return [0.25, 0.75]
+    means = [circular_mean(c) for c in clusters]
+    sep = min((means[1] - means[0]) % 1.0, (means[0] - means[1]) % 1.0)
+    if not 0.3 <= sep <= 0.7:
+        return [0.25, 0.75]
+    return [(m + 0.25) % 1.0 for m in means]
+
+
+def extract_fw3(times, mus, laps_list, dist_list=None, window=FW_WINDOW):
+    if dist_list is None:
+        dist_list = [None] * len(times)
+    nums = [
+        (t, m, l, d)
+        for t, m, l, d in zip(times, mus, laps_list, dist_list)
+        if is_number(t) and is_number(m) and is_number(l)
+    ]
+    if not nums:
+        return []
+    if FW_CENTER_MU:
+        offset = sum(m for _, m, _, _ in nums) / len(nums)
+        nums = [(t, m - offset, l, d) for t, m, l, d in nums]
+    segments = {}
+    order = []
+    for t, m, l, d in nums:
+        key = math.floor(l)
+        if key not in segments:
+            segments[key] = []
+            order.append(key)
+        segments[key].append((t, m, l, d))
+    if window >= 1:
+        half_width = 0.5
+    else:
+        half_width = math.acos(window) / (2 * math.pi)
+    cycles = []
+    edges = [k for k in order if k >= 0]
+    started = False
+    kept = []
+    for key in order:
+        if key < 0:
+            continue
+        pts = segments[key]
+        if len(pts) < 2:
+            continue
+        phases = [l - key for _, _, l, _ in pts]
+        if not started or key == edges[-1]:
+            # Fig. 25: only complete cycles, drop partial edges.
+            if min(phases) > 0.1 or max(phases) < 0.9:
+                started = True
+                continue
+        started = True
+        kept.append((key, pts, phases))
+    if window >= 1:
+        selections = [
+            (key, list(pts)) for key, pts, _ in kept
+        ]
+    else:
+        raw_sel = []
+        for key, pts, phases in kept:
+            centered = [m for _, m, _, _ in pts]
+            centers = alignment_centers(phases, centered)
+            sel = [
+                (t, m, l, d) for (t, m, l, d), p in zip(pts, phases)
+                if min(
+                    abs((p - c + 0.5) % 1.0 - 0.5)
+                    for c in centers
+                ) <= half_width
+            ]
+            raw_sel.append((key, pts, sel))
+        counts = sorted(len(sel) for _, _, sel in raw_sel)
+        median = counts[len(counts) // 2] if counts else 0
+        use_window = median >= FW_MIN_POINTS
+        if raw_sel and not use_window:
+            info(
+                ' - median %d points in window,'
+                ' using full cycles' % median)
+        selections = []
+        for key, pts, sel in raw_sel:
+            if use_window and len(sel) >= FW_MIN_POINTS:
+                selections.append((key, sel))
+                continue
+            if use_window:
+                info(
+                    ' - cycle %d: only %d points in window,'
+                    ' using full cycle' % (key, len(sel)))
+            selections.append(
+                (key, [(t, m, l, d) for t, m, l, d in pts]))
+    for key, sel in selections:
+        up = [m for _, m, _, _ in sel if m > 0]
+        lo = [abs(m) for _, m, _, _ in sel if m < 0]
+        if not up or not lo:
+            continue
+        fw3 = (sum(up) / len(up) + sum(lo) / len(lo)) / 2
+        t_rep = sum(t for t, _, _, _ in sel) / len(sel)
+        laps_rep = sum(l for _, _, l, _ in sel) / len(sel)
+        dists = [d for _, _, _, d in sel if is_number(d)]
+        if dists:
+            dist_rep = sum(dists) / len(dists)
+        else:
+            dist_rep = None
+        cycles.append((t_rep, fw3, laps_rep, dist_rep))
+    return cycles
+
+
 def selected_acquisitions(groups):
     selected = []
     for group_id in groups['indexes']:
@@ -285,6 +446,45 @@ def tribo_y_label(y_name):
     return y_name
 
 
+def rectify_reverse_mu(columns):
+    mean_col = None
+    for column in columns:
+        if summary_chart_name(column['parameter']) != 'Mu':
+            continue
+        if 'MEAN' in column['parameter'].upper():
+            mean_col = column
+            break
+    if mean_col is None or not mean_col['values']:
+        return False
+    if any(v > 0 for v in mean_col['values']):
+        return False
+    maxima = None
+    minima = None
+    for column in columns:
+        if summary_chart_name(column['parameter']) != 'Mu':
+            continue
+        upper = column['parameter'].upper()
+        if 'MAX' in upper:
+            maxima = column
+        elif 'MIN' in upper:
+            minima = column
+    if maxima is not None and minima is not None:
+        maxima['values'], minima['values'] = (
+            minima['values'], maxima['values'])
+        maxima['acquisitions'], minima['acquisitions'] = (
+            minima['acquisitions'], maxima['acquisitions'])
+    for column in columns:
+        if summary_chart_name(column['parameter']) != 'Mu':
+            continue
+        column['values'] = [abs(v) for v in column['values']]
+        column['acquisitions'] = {
+            key: abs(v)
+            for key, v in column['acquisitions'].items()
+        }
+        column['stats'] = stats(column['values'])
+    return True
+
+
 def fill_mu_from_curves(summary_chart_data, exported, y_name, y_unit):
     lower = y_name.lower()
     if (
@@ -294,15 +494,14 @@ def fill_mu_from_curves(summary_chart_data, exported, y_name, y_unit):
         and 'coefficient' not in lower
     ):
         return
+    if summary_chart_data.get('Mu', {}).get('groups'):
+        return
     values_by_group = {}
     for item in exported:
-        points = [
-            v for v in item['y'].tolist() if is_number(v)
-        ]
-        if not points:
+        stat = item.get('fstat')
+        if not is_number(stat):
             continue
-        mean = sum(points) / len(points)
-        values_by_group.setdefault(item['group'], []).append(mean)
+        values_by_group.setdefault(item['group'], []).append(stat)
     curve_groups = []
     for group_name, values in values_by_group.items():
         result = stats(values)
@@ -613,6 +812,10 @@ def write_results_sheet(
         for column in columns:
             column['stats'] = stats(column['values'])
 
+        if rectify_reverse_mu(columns):
+            info(' - %s: reverse rotation, using absolute values'
+                 % group['name'])
+
         group_chart_names = set()
         matched = {}
         for column in columns:
@@ -721,6 +924,7 @@ def write_curves_sheet(
     laps_dim,
     dist_dim,
     group_colors,
+    server_version=None,
 ):
     ws = wb.create_sheet('Curves')
     ws.freeze_panes = 'A3'
@@ -748,6 +952,10 @@ def write_curves_sheet(
         headers.append(chart_title(dist_name, dist_unit or 'm'))
     specs.append((y_dim, y_factor))
     headers.append(chart_title(y_label, y_unit))
+    conditions_supported = (
+        server_version is None
+        or not _version_greater('11.0.0', server_version)
+    )
     exported = []
     chart = None
     col = 1
@@ -757,40 +965,123 @@ def write_curves_sheet(
             rows = get_curve_data(server, doc_id, data_id, curve_type)
             if not rows:
                 continue
-            breakpoints = get_breakpoints(server, doc_id, data_id, len(rows))
-            indices, breakpoints = resample_curve_indices(
-                len(rows), breakpoints, MAX_CURVE_POINTS)
-            rows = [rows[i] for i in indices]
             display_name = curve_measurement_name(
                 group,
                 acquisition,
                 acquisition_index,
             )
+            full_y = [point[y_dim] / y_factor for point in rows]
+            full_laps = None
+            if laps_dim is not None:
+                full_laps = [
+                    point[laps_dim] / laps_factor for point in rows
+                ]
+            measure_type = None
+            if conditions_supported:
+                try:
+                    cond = server.acquisitions.conditions(
+                        doc_id=doc_id, acquisition_id=data_id,
+                    )
+                except Exception as exc:
+                    if _is_method_unavailable(exc):
+                        conditions_supported = False
+                    cond = None
+                if isinstance(cond, dict):
+                    raw_type = condition_path(
+                        cond, 'sequence.measure_type')
+                    if is_number(raw_type):
+                        measure_type = int(raw_type)
+            mode = detect_mode(full_y, measure_type)
+            if mode == 'reverse':
+                info(' - %s: reverse rotation, using absolute values'
+                     % display_name)
+            elif mode == 'reciprocating':
+                info(' - %s: reciprocating, extracting FW3 cycles'
+                     % display_name)
+            cyclic = False
+            cx_list, cy_list, cl_list, cd_list = [], [], [], []
+            if mode == 'reciprocating' and full_laps is not None:
+                if dist_dim is not None:
+                    full_dist = [
+                        point[dist_dim] / dist_factor for point in rows
+                    ]
+                else:
+                    full_dist = None
+                cycles = extract_fw3(
+                    [point[x_dim] / x_factor for point in rows],
+                    full_y,
+                    full_laps,
+                    full_dist,
+                )
+                if cycles:
+                    cyclic = True
+                    cx_list = [c[0] for c in cycles]
+                    cy_list = [c[1] for c in cycles]
+                    cl_list = [c[2] for c in cycles]
+                    cd_list = [c[3] for c in cycles]
+                else:
+                    info(' - %s: no complete cycles found'
+                         % display_name)
+            breakpoints = get_breakpoints(server, doc_id, data_id, len(rows))
+            indices, breakpoints = resample_curve_indices(
+                len(rows), breakpoints, MAX_CURVE_POINTS)
+            rows = [rows[i] for i in indices]
             ws.cell(1, col, display_name)
-            for offset, header in enumerate(headers):
+            if cyclic:
+                block_headers = ['Cycle ' + h for h in headers]
+            else:
+                block_headers = headers
+            for offset, header in enumerate(block_headers):
                 ws.cell(2, col + offset, header)
             x_values = []
             y_values = []
-            for row_index, point in enumerate(rows, 3):
-                values = [
-                    point[dim] / factor for dim, factor in specs
-                ]
-                for offset, value in enumerate(values):
-                    ws.cell(row_index, col + offset, value)
-                if is_number(values[0]) and is_number(values[-1]):
-                    x_values.append(values[0])
-                    y_values.append(values[-1])
+            if cyclic:
+                for pos in range(len(cx_list)):
+                    ws.cell(pos + 3, col, float(cx_list[pos]))
+                    ws.cell(pos + 3, col + 1, float(cl_list[pos]))
+                    dist = cd_list[pos]
+                    if is_number(dist):
+                        ws.cell(pos + 3, col + 2, float(dist))
+                    ws.cell(pos + 3, col + 3, float(cy_list[pos]))
+            else:
+                for row_index, point in enumerate(rows, 3):
+                    values = [
+                        point[dim] / factor for dim, factor in specs
+                    ]
+                    if mode == 'reverse' and is_number(values[-1]):
+                        values[-1] = abs(values[-1])
+                    for offset, value in enumerate(values):
+                        ws.cell(row_index, col + offset, value)
+                    if is_number(values[0]) and is_number(values[-1]):
+                        x_values.append(values[0])
+                        y_values.append(values[-1])
+            if cy_list:
+                fstat = sum(cy_list) / len(cy_list)
+            elif y_values:
+                fstat = sum(y_values) / len(y_values)
+            else:
+                fstat = None
             exported.append({
                 'name': display_name,
                 'group': group['name'],
+                'mode': mode,
+                'cyclic': cyclic,
                 'col': col,
                 'y_offset': len(specs) - 1,
+                'ccol': col if cyclic else None,
                 'count': len(rows),
+                'ccount': len(cx_list),
                 'breakpoints': breakpoints,
                 'x': np.array(x_values, dtype=float),
                 'y': np.array(y_values, dtype=float),
+                'cx': np.array(cx_list, dtype=float),
+                'cy': np.array(cy_list, dtype=float),
+                'fstat': fstat,
             })
-            col += len(specs) + 1
+            if cyclic:
+                col += 5
+            else:
+                col += len(specs) + 1
 
     if exported:
         chart = ScatterChart()
@@ -804,29 +1095,56 @@ def write_curves_sheet(
         chart.height = 14
         style_curve_chart(chart)
         for item in exported:
-            x_values = Reference(
-                ws,
-                min_col=item['col'],
-                min_row=3,
-                max_row=item['count'] + 2,
-            )
-            y_values = Reference(
-                ws,
-                min_col=item['col'] + item['y_offset'],
-                min_row=3,
-                max_row=item['count'] + 2,
-            )
+            if item.get('cyclic') and len(item.get('cx', [])):
+                x_values = Reference(
+                    ws,
+                    min_col=item['ccol'],
+                    min_row=3,
+                    max_row=item['ccount'] + 2,
+                )
+                y_values = Reference(
+                    ws,
+                    min_col=item['ccol'] + 3,
+                    min_row=3,
+                    max_row=item['ccount'] + 2,
+                )
+                cache_x = item['cx'].tolist()
+                cache_y = item['cy'].tolist()
+            else:
+                x_values = Reference(
+                    ws,
+                    min_col=item['col'],
+                    min_row=3,
+                    max_row=item['count'] + 2,
+                )
+                y_values = Reference(
+                    ws,
+                    min_col=item['col'] + item['y_offset'],
+                    min_row=3,
+                    max_row=item['count'] + 2,
+                )
+                cache_x = item['x'].tolist()
+                cache_y = item['y'].tolist()
             series = Series(y_values, x_values, title=item['name'])
             color = color_for_group(item['group'], group_colors)
             series.graphicalProperties.line.solidFill = color
             series.graphicalProperties.line.width = CURVE_LINE_WIDTH
             series.marker.graphicalProperties.solidFill = color
             series.marker.graphicalProperties.line.solidFill = color
-            cache_num_ref(series.xVal, item['x'].tolist())
-            cache_num_ref(series.yVal, item['y'].tolist())
+            cache_num_ref(series.xVal, cache_x)
+            cache_num_ref(series.yVal, cache_y)
             chart.series.append(series)
 
     return exported, x_name, x_unit, y_name, y_unit, chart
+
+
+def has_curve(item):
+    if item.get('cyclic'):
+        return (
+            len(item.get('cx', [])) >= 2
+            and len(item.get('cy', [])) >= 2
+        )
+    return len(item['x']) >= 2 and len(item['y']) >= 2
 
 
 def write_average_curves_sheet(
@@ -842,7 +1160,7 @@ def write_average_curves_sheet(
     ws.freeze_panes = 'A3'
     groups = []
     for item in exported:
-        if len(item['x']) < 2 or len(item['y']) < 2:
+        if not has_curve(item):
             continue
         if item['group'] not in groups:
             groups.append(item['group'])
@@ -868,11 +1186,7 @@ def write_average_curves_sheet(
         usable_items = [
             item
             for item in exported
-            if (
-                item['group'] == group_name
-                and len(item['x']) >= 2
-                and len(item['y']) >= 2
-            )
+            if item['group'] == group_name and has_curve(item)
         ]
         if not usable_items:
             continue
@@ -893,22 +1207,32 @@ def write_average_curves_sheet(
         averaged_x = []
         averaged_y = []
         averaged_std = []
+        cyclic = all(u.get('cyclic') for u in usable_items)
+        if not cyclic and any(u.get('cyclic') for u in usable_items):
+            info(' - %s: mixed modes, averaging raw curves'
+                 % group_name)
+        data = []
+        for u in usable_items:
+            if cyclic:
+                data.append((u['cx'], u['cy'], [0, len(u['cx']) - 1]))
+            else:
+                data.append((u['x'], u['y'], u['breakpoints']))
         segment_count = max(
-            len(item['breakpoints']) - 1
-            for item in usable_items
+            len(bp) - 1
+            for _, _, bp in data
         )
         for segment_index in range(segment_count):
             segment_x = []
             segment_y = []
             target_count = 0
-            for item in usable_items:
-                if segment_index + 1 >= len(item['breakpoints']):
+            for xa, ya, bp in data:
+                if segment_index + 1 >= len(bp):
                     continue
-                start = item['breakpoints'][segment_index]
-                stop = item['breakpoints'][segment_index + 1]
-                x = item['x'][start:stop + 1]
-                y = item['y'][start:stop + 1]
-                if segment_index == 0:
+                start = bp[segment_index]
+                stop = bp[segment_index + 1]
+                x = xa[start:stop + 1]
+                y = ya[start:stop + 1]
+                if segment_index == 0 and not cyclic:
                     positive = np.where((x > 0) | (y > 0))[0]
                     if len(positive):
                         x = x[positive[0]:]
@@ -1443,6 +1767,7 @@ def export_selected_tribo_excel(server, doc_id, server_version=None):
         laps_dim,
         dist_dim,
         group_colors,
+        server_version,
     )
     average_curve_chart = write_average_curves_sheet(
         wb,
