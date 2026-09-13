@@ -1253,6 +1253,8 @@ def write_measurement_parameters_sheet(
     ws = wb.create_sheet('Parameters')
     header_fill = PatternFill('solid', fgColor='D9EAF7')
     section_fill = PatternFill('solid', fgColor='FCE4D6')
+    ws.cell(1, 1, 'Values as returned by the instrument (SI units)')
+    ws.cell(1, 1).font = Font(italic=True)
 
     # Method absent before V11; calling it corrupts the TCP session.
     # Check version up front instead of retrying per measurement.
@@ -1322,7 +1324,7 @@ def write_measurement_parameters_sheet(
         groups[key]['measurements'].append(m)
 
     def write_group(ws, group_data, col):
-        row = 1
+        row = 2
         ws.cell(row, col, 'Measurement Name').font = Font(bold=True)
         ws.cell(row, col).fill = header_fill
         row += 1
