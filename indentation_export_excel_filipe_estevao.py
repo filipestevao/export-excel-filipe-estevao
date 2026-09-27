@@ -1,5 +1,5 @@
 # ==============================================================================
-# Script Name: Export Excel by Filipe Estevao - Indentation
+# Script Name: Export Excel by Filipe Estevao
 # Description: Python scripts for use with Anton Paar's software for data export
 # to Excel
 # 
@@ -25,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.2.0"
+__version__ = "1.1.2"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -1015,9 +1015,10 @@ def export_selected_indentation_excel(server, doc_id, server_version=None):
     groups = server.groups(doc_id=doc_id)
     selected = selected_acquisitions(groups)
     if not selected:
-        raise RuntimeError(
-            'No selected/relevant indentation measurements found'
-        )
+        message = 'No selected/relevant indentation measurements found'
+        info(message)
+        show_warning_popup('No relevant measurements selected')
+        raise RuntimeError(message)
 
     curves = server.curves(doc_id=doc_id)
     analyses_classes = {
@@ -1080,6 +1081,20 @@ def export_selected_indentation_excel(server, doc_id, server_version=None):
     wb.save(export_path)
     info('File saved: %s' % export_path)
     return export_path
+
+
+def show_warning_popup(message, title='Warning'):
+    try:
+        import tkinter as tk
+        from tkinter import messagebox
+
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes('-topmost', True)
+        messagebox.showwarning(title, message, parent=root)
+        root.destroy()
+    except Exception as error:
+        info(' - warning popup failed: %s' % error)
 
 
 def open_file_with_default_program(filename):
