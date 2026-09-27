@@ -352,6 +352,162 @@ def selected_acquisitions(groups):
     return selected
 
 
+def apply_mu_moving_average(values, window):
+    # Centered moving average approximating InstrumX "Filter Value : N".
+    # Analysis of manual exports in "tribo export/" shows only the mu
+    # column changes, 0pt/1pt are identical (raw), larger N smooths more.
+    # The exact proprietary formula is unknown (no standard FIR fits the
+    # decimated exports exactly), so use a transparent zero-phase average:
+    # window N, centered, edges shrink to available points. Size <= 1
+    # returns values unchanged. Non-numeric entries are ignored in the
+    # window mean and preserved as-is when no numeric neighbour exists.
+    if window is None or window <= 1:
+        return list(values)
+    try:
+        size = int(window)
+    except (TypeError, ValueError):
+        return list(values)
+    if size <= 1:
+        return list(values)
+    left = size // 2
+    right = size - left - 1
+    result = []
+    count = len(values)
+    for i, current in enumerate(values):
+        window_values = []
+        for k in range(i - left, i + right + 1):
+            if 0 <= k < count and is_number(values[k]):
+                window_values.append(values[k])
+        if window_values:
+            result.append(sum(window_values) / len(window_values))
+        else:
+            result.append(current)
+    return result
+
+
+def ask_mu_filter_selection():
+    # Returns (use_filtered, filter_size). Raw corresponds to
+    # (False, 1). Closing the window corresponds to raw values.
+    # Falls back to raw when tkinter is unavailable (headless).
+    try:
+        import tkinter as tk
+    except Exception as error:
+        info(' - filter dialog unavailable (%s), using raw values'
+             % error)
+        return False, 1
+    try:
+        selection = {'filtered': False, 'size': 1}
+
+        root = tk.Tk()
+        root.title('Data Selection')
+        root.attributes('-topmost', True)
+
+        mode_var = tk.StringVar(value='raw')
+        size_var = tk.StringVar(value='1')
+
+        tk.Label(root, text='Data Selection',
+                 font=('TkDefaultFont', 10, 'bold')).pack(
+            padx=20, pady=(15, 5))
+
+        raw_button = tk.Radiobutton(
+            root, text='Raw values', value='raw', variable=mode_var)
+        filtered_button = tk.Radiobutton(
+            root, text='Filtered values', value='filtered',
+            variable=mode_var)
+        raw_button.pack(anchor='w', padx=30)
+        filtered_button.pack(anchor='w', padx=30)
+
+        entry_frame = tk.Frame(root)
+        entry_frame.pack(padx=30, pady=(10, 0), fill='x')
+        tk.Label(entry_frame, text='Filter size:').pack(side='left')
+        size_entry = tk.Entry(entry_frame, textvariable=size_var,
+                              width=6, justify='center')
+        size_entry.pack(side='left', padx=(5, 0))
+        tk.Label(entry_frame, text='pt').pack(side='left', padx=(5, 0))
+
+        slider = tk.Scale(root, from_=1, to=100, orient='horizontal',
+                          showvalue=False, length=250)
+        slider.set(1)
+        slider.pack(padx=30, pady=(5, 0), fill='x')
+        scale_labels = tk.Frame(root)
+        scale_labels.pack(padx=30, fill='x')
+        tk.Label(scale_labels, text='1').pack(side='left', anchor='w')
+        tk.Label(scale_labels, text='100').pack(side='right', anchor='e')
+
+        def set_controls_state(*_args):
+            enabled = mode_var.get() == 'filtered'
+            state = 'normal' if enabled else 'disabled'
+            size_entry.configure(state=state)
+            slider.configure(state=state)
+
+        def on_slider_change(_value):
+            if mode_var.get() != 'filtered':
+                return
+            try:
+                current = int(float(slider.get()))
+            except (TypeError, ValueError):
+                return
+            current = min(100, max(1, current))
+            if size_var.get() != str(current):
+                size_var.set(str(current))
+
+        def on_entry_change(*_args):
+            if mode_var.get() != 'filtered':
+                return
+            try:
+                current = int(float(size_var.get()))
+            except (TypeError, ValueError):
+                return
+            current = min(100, max(1, current))
+            if int(float(slider.get())) != current:
+                slider.set(current)
+
+        def clamp_entry_on_focus_out(_event=None):
+            try:
+                current = int(float(size_var.get()))
+            except (TypeError, ValueError):
+                size_var.set(str(int(float(slider.get()))))
+                return
+            size_var.set(str(min(100, max(1, current))))
+
+        mode_var.trace_add('write', set_controls_state)
+        size_var.trace_add('write', on_entry_change)
+        slider.configure(command=on_slider_change)
+        size_entry.bind('<FocusOut>', clamp_entry_on_focus_out)
+        set_controls_state()
+
+        def on_apply():
+            if mode_var.get() == 'filtered':
+                try:
+                    size = int(float(size_var.get()))
+                except (TypeError, ValueError):
+                    size = int(float(slider.get()))
+                selection['filtered'] = True
+                selection['size'] = min(100, max(1, size))
+            else:
+                selection['filtered'] = False
+                selection['size'] = 1
+            root.destroy()
+
+        def on_close():
+            selection['filtered'] = False
+            selection['size'] = 1
+            root.destroy()
+
+        tk.Button(root, text='Apply', width=12,
+                  command=on_apply).pack(pady=15)
+        root.protocol('WM_DELETE_WINDOW', on_close)
+        root.mainloop()
+        return selection['filtered'], selection['size']
+    except Exception as error:
+        info(' - filter dialog failed (%s), using raw values' % error)
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        return False, 1
+
+
 def get_curve_data(server, doc_id, data_id, curve_type):
     first = server.curves.getdata(
         doc_id=doc_id,
@@ -925,6 +1081,8 @@ def write_curves_sheet(
     dist_dim,
     group_colors,
     server_version=None,
+    mu_filter_size=1,
+    rows_cache=None,
 ):
     ws = wb.create_sheet('Curves')
     ws.freeze_panes = 'A3'
@@ -962,7 +1120,10 @@ def write_curves_sheet(
 
     for _, group, acquisitions in selected:
         for data_id, acquisition, acquisition_index in acquisitions:
-            rows = get_curve_data(server, doc_id, data_id, curve_type)
+            if rows_cache is not None and data_id in rows_cache:
+                rows = rows_cache[data_id]
+            else:
+                rows = get_curve_data(server, doc_id, data_id, curve_type)
             if not rows:
                 continue
             display_name = curve_measurement_name(
@@ -998,6 +1159,12 @@ def write_curves_sheet(
             elif mode == 'reciprocating':
                 info(' - %s: reciprocating, extracting FW3 cycles'
                      % display_name)
+            filtered_full_y = full_y
+            if mode != 'reciprocating' and mu_filter_size > 1:
+                filtered_full_y = apply_mu_moving_average(
+                    full_y, mu_filter_size)
+                info(' - %s: applying %d pt moving average to mu'
+                     % (display_name, mu_filter_size))
             cyclic = False
             cx_list, cy_list, cl_list, cd_list = [], [], [], []
             if mode == 'reciprocating' and full_laps is not None:
@@ -1025,6 +1192,7 @@ def write_curves_sheet(
             breakpoints = get_breakpoints(server, doc_id, data_id, len(rows))
             indices, breakpoints = resample_curve_indices(
                 len(rows), breakpoints, MAX_CURVE_POINTS)
+            filtered_resampled = [filtered_full_y[i] for i in indices]
             rows = [rows[i] for i in indices]
             ws.cell(1, col, display_name)
             if cyclic:
@@ -1044,12 +1212,15 @@ def write_curves_sheet(
                         ws.cell(pos + 3, col + 2, float(dist))
                     ws.cell(pos + 3, col + 3, float(cy_list[pos]))
             else:
-                for row_index, point in enumerate(rows, 3):
+                for pos, point in enumerate(rows):
+                    row_index = pos + 3
                     values = [
                         point[dim] / factor for dim, factor in specs
                     ]
-                    if mode == 'reverse' and is_number(values[-1]):
-                        values[-1] = abs(values[-1])
+                    filtered_y = filtered_resampled[pos]
+                    if mode == 'reverse' and is_number(filtered_y):
+                        filtered_y = abs(filtered_y)
+                    values[-1] = filtered_y
                     for offset, value in enumerate(values):
                         ws.cell(row_index, col + offset, value)
                     if is_number(values[0]) and is_number(values[-1]):
@@ -1086,7 +1257,11 @@ def write_curves_sheet(
     if exported:
         chart = ScatterChart()
         chart.scatterStyle = 'lineMarker'
-        chart.title = 'Tribometer curves'
+        if mu_filter_size > 1:
+            chart.title = ('Tribometer curves - Filtered Data %dpt'
+                           % mu_filter_size)
+        else:
+            chart.title = 'Tribometer curves'
         chart.x_axis.title = '%s [%s]' % (x_name, x_unit) if x_unit else x_name
         chart.y_axis.title = chart_title(y_label, y_unit)
         chart.x_axis.scaling.min = 0
@@ -1155,6 +1330,7 @@ def write_average_curves_sheet(
     y_name,
     y_unit,
     group_colors,
+    mu_filter_size=1,
 ):
     ws = wb.create_sheet('Average curves')
     ws.freeze_panes = 'A3'
@@ -1171,7 +1347,11 @@ def write_average_curves_sheet(
 
     chart = ScatterChart()
     chart.scatterStyle = 'lineMarker'
-    chart.title = 'Average tribometer curves'
+    if mu_filter_size > 1:
+        chart.title = ('Average tribometer curves - Filtered Data %dpt'
+                       % mu_filter_size)
+    else:
+        chart.title = 'Average tribometer curves'
     y_label = tribo_y_label(y_name)
     chart.x_axis.title = '%s [%s]' % (x_name, x_unit) if x_unit else x_name
     chart.y_axis.title = chart_title(y_label, y_unit)
@@ -1791,6 +1971,43 @@ def export_selected_tribo_excel(server, doc_id, server_version=None):
     )
     info(' - curve type: %s' % curve_type)
 
+    _, y_factor_tmp = curve_unit(curves, curve_type, y_dim)
+    rows_cache = {}
+    needs_filter_dialog = False
+    for _, _, acquisitions in selected:
+        for data_id, _, _ in acquisitions:
+            try:
+                cached_rows = get_curve_data(
+                    server, doc_id, data_id, curve_type)
+            except Exception:
+                cached_rows = []
+            rows_cache[data_id] = cached_rows
+            if not cached_rows:
+                continue
+            try:
+                tmp_y = [point[y_dim] / y_factor_tmp
+                         for point in cached_rows]
+            except (IndexError, TypeError, KeyError):
+                continue
+            if detect_mode(tmp_y, None) != 'reciprocating':
+                needs_filter_dialog = True
+                break
+        if needs_filter_dialog:
+            break
+
+    if needs_filter_dialog:
+        use_filtered, mu_filter_size = ask_mu_filter_selection()
+        if use_filtered:
+            info(' - mu filter: %d pt moving average'
+                 ' (rotational only, reciprocating excluded)'
+                 % mu_filter_size)
+        else:
+            mu_filter_size = 1
+            info(' - mu filter: raw values')
+    else:
+        mu_filter_size = 1
+        info(' - all reciprocating, skipping mu filter dialog')
+
     wb = Workbook(write_only=False)
     charts_ws = wb.active
     charts_ws.title = 'Charts'
@@ -1820,6 +2037,8 @@ def export_selected_tribo_excel(server, doc_id, server_version=None):
         dist_dim,
         group_colors,
         server_version,
+        mu_filter_size,
+        rows_cache,
     )
     average_curve_chart = write_average_curves_sheet(
         wb,
@@ -1829,6 +2048,7 @@ def export_selected_tribo_excel(server, doc_id, server_version=None):
         y_name,
         y_unit,
         group_colors,
+        mu_filter_size,
     )
     fill_mu_from_curves(summary_chart_data, exported, y_name, y_unit)
     write_charts_sheet(
