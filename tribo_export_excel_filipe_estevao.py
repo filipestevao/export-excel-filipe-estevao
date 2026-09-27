@@ -25,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel Tribo by Filipe Estevao"
-__version__ = "1.1.2"
+__version__ = "1.2.1"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -1714,11 +1714,62 @@ def format_numbers(ws):
                     cell.number_format = '#,##0.00'
 
 
+def _is_absolute_path(path):
+    if not path:
+        return False
+    if os.path.isabs(path):
+        return True
+    # Windows absolute (drive or UNC) even when running on Linux.
+    if len(path) >= 3 and path[0].isalpha() and path[1] == ':':
+        if path[2] in ('\\', '/'):
+            return True
+    if path.startswith('\\\\'):
+        return True
+    return False
+
+
+def _is_protected_path(path):
+    low = path.lower().replace('/', '\\')
+    protected_prefixes = (
+        'c:\\program files\\anton paar\\instrumx',
+        'c:\\program files\\anton paar',
+        'c:\\program files',
+        'c:\\program files (x86)',
+    )
+    return any(low.startswith(prefix) for prefix in protected_prefixes)
+
+
+def ensure_doc_saved(doc, export_path=None):
+    raw_path = doc.get('path') if isinstance(doc, dict) else None
+    path = raw_path.strip() if isinstance(raw_path, str) else raw_path
+    if not path:
+        message = 'File not saved. Please save the file before exporting.'
+        info(message)
+        show_warning_popup(message)
+        raise RuntimeError(message)
+    if export_path is not None:
+        if not _is_absolute_path(export_path):
+            message = 'File not saved. Please save the file before exporting.'
+            info(message)
+            info(' - export path is relative (%s), halting'
+                 ' to avoid writing to InstrumX folder' % export_path)
+            show_warning_popup(message)
+            raise RuntimeError(message)
+        if _is_protected_path(export_path):
+            message = 'File not saved. Please save the file before exporting.'
+            info(message)
+            info(' - export path in protected location (%s), halting'
+                 % export_path)
+            show_warning_popup(message)
+            raise RuntimeError(message)
+
+
 def export_selected_tribo_excel(server, doc_id, server_version=None):
     docs = server.docs()
     doc = docs['docs'][doc_id]
     doc_path = doc.get('path') or doc.get('name') or 'tribo_export'
     export_path = os.path.splitext(doc_path)[0] + '.xlsx'
+    ensure_doc_saved(doc, export_path)
     groups = server.groups(doc_id=doc_id)
     selected = selected_acquisitions(groups)
     if not selected:
@@ -1790,7 +1841,16 @@ def export_selected_tribo_excel(server, doc_id, server_version=None):
     for ws in wb.worksheets:
         format_numbers(ws)
 
-    wb.save(export_path)
+    try:
+        wb.save(export_path)
+    except PermissionError as error:
+        message = (
+            'File not saved. Please save the file before exporting.'
+        )
+        info(message)
+        info(' - save failed for %s: %s' % (export_path, error))
+        show_warning_popup(message)
+        raise RuntimeError(message) from error
     info('File saved: %s' % export_path)
     return export_path
 
