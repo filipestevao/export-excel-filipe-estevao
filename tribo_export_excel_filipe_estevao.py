@@ -25,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel Tribo by Filipe Estevao"
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -1118,7 +1118,8 @@ def write_curves_sheet(
     chart = None
     col = 1
 
-    for _, group, acquisitions in selected:
+    for group_index, (_, group, acquisitions) in enumerate(selected, 1):
+        exported_before = len(exported)
         for data_id, acquisition, acquisition_index in acquisitions:
             if rows_cache is not None and data_id in rows_cache:
                 rows = rows_cache[data_id]
@@ -1253,6 +1254,9 @@ def write_curves_sheet(
                 col += 5
             else:
                 col += len(specs) + 1
+        info(' - group completed: %s (%d/%d groups, %d measurements)'
+             % (group['name'], group_index, len(selected),
+                len(exported) - exported_before))
 
     if exported:
         chart = ScatterChart()

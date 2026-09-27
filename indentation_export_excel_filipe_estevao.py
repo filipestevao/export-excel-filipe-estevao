@@ -25,7 +25,7 @@
 # ==============================================================================
 
 __title__ = "Export Excel by Filipe Estevao"
-__version__ = "1.2.1"
+__version__ = "1.2.2"
 __author__ = "Filipe Estevao"
 __status__ = "Production"
 __url__ = "https://github.com/filipestevao/export-excel-filipe-estevao"
@@ -482,7 +482,8 @@ def write_curves_sheet(
     chart = None
     col = 1
 
-    for _, group, acquisitions in selected:
+    for group_index, (_, group, acquisitions) in enumerate(selected, 1):
+        exported_before = len(exported)
         for data_id, acquisition, acquisition_index in acquisitions:
             rows = get_curve_data(server, doc_id, data_id, curve_type)
             if not rows:
@@ -520,6 +521,9 @@ def write_curves_sheet(
                 'y': np.array(y_values, dtype=float),
             })
             col += 3
+        info(' - group completed: %s (%d/%d groups, %d measurements)'
+             % (group['name'], group_index, len(selected),
+                len(exported) - exported_before))
 
     if exported:
         chart = ScatterChart()
